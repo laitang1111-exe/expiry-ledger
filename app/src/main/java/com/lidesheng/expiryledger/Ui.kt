@@ -455,6 +455,7 @@ fun EntryScreen(
     var unit by remember { mutableStateOf(LifeUnit.MONTH) }
     var knownInfo by remember { mutableStateOf<BarcodeInfo?>(null) }
     var camera by remember { mutableStateOf<CaptureMode?>(null) }
+    var nameCandidates by remember { mutableStateOf<List<String>?>(null) }
 
     fun applyBarcode(code: String) {
         barcode = code
@@ -489,8 +490,43 @@ fun EntryScreen(
                 scope.launch { snackbar.showSnackbar(msg) }
             },
             onClose = { camera = null },
+            onCandidates = { cands ->
+                nameCandidates = cands
+                camera = null
+            },
         )
         return
+    }
+
+    val cands = nameCandidates
+    if (cands != null) {
+        AlertDialog(
+            onDismissRequest = { nameCandidates = null },
+            title = { Text("选择商品名称") },
+            text = {
+                Column {
+                    Text(
+                        "按字号从大到小排的候选，点一个填入：",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    cands.forEach { c ->
+                        TextButton(
+                            onClick = { name = c; nameCandidates = null },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text(c, fontSize = 15.sp, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { nameCandidates = null }) { Text("都不对，手动输") }
+            }
+        )
     }
 
     Scaffold(
@@ -534,7 +570,10 @@ fun EntryScreen(
                 onValueChange = { name = it },
                 label = { Text("商品名称") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                trailingIcon = {
+                    TextButton(onClick = { camera = CaptureMode.NAME }) { Text("拍名称") }
+                }
             )
 
             Card(Modifier.fillMaxWidth()) {

@@ -32,10 +32,42 @@ import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-enum class CaptureMode { BARCODE, TEXT }
+enum class CaptureMode { BARCODE, TEXT, NAME }
+
+/** 从识别结果里挑商品名候选：字号最大、位置靠上、剔除包装上的规范词 */
+private fun extractNameCandidates(result: com.google.mlkit.vision.text.Text): List<String> {
+    val badWords = listOf(
+        "净含量", "含量", "克", "毫升", "ml", "ML", "配料", "执行标准", "生产日期", "保质期",
+        "保质", "厂址", "地址", "电话", "营养成分", "储存", "贮存", "见包装", "GB/", "QS",
+        "条形码", "条码", "规格", "产地", "生产商", "制造商",
+    )
+    val dateRe = Regex("""(20\d{2})\s*[-/.年]\s*\d{1,2}""")
+
+    data class Cand(val text: String, val height: Int, val top: Int)
+
+    val list = ArrayList<Cand>()
+    for (block in result.textBlocks) {
+        for (line in block.lines) {
+            val t = line.text.trim()
+            val box = line.boundingBox ?: continue
+            if (t.length !in 2..20) continue
+            if (t.none { it in '\u4e00'..'\u9fff' }) continue
+            if (t.all { it.isDigit() }) continue
+            if (dateRe.containsMatchIn(t)) continue
+            if (badWords.any { t.contains(it, ignoreCase = true) }) continue
+            list.add(Cand(t, box.height(), box.top))
+        }
+    }
+    return list
+        .sortedWith(compareByDescending<Cand> { it.height }.thenBy { it.top })
+        .map { it.text }
+        .distinct()
+        .take(5)
+}
 
 /**
- * 摄像头取景：BARCODE 模式扫条码，TEXT 模式做文字识别（读生产日期）。
+ * 摄像头取景：
+ *   BARCODE 扫条码；TEXT 读生产日期；NAME 读商品名候选（字号最大的几块文字）
  * 识别成功后回调并自动关闭。
  */
 @Composable
@@ -44,6 +76,7 @@ fun CameraCaptureScreen(
     onBarcode: (String) -> Unit,
     onText: (String) -> Unit,
     onClose: () -> Unit,
+    onCandidates: (List<String>) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -76,7 +109,11 @@ fun CameraCaptureScreen(
     }
 
     val done = remember { AtomicBoolean(false) }
-    val hint = if (mode == CaptureMode.BARCODE) "对准商品条码" else "对准包装上的生产日期"
+    val hint = when (mode) {
+        CaptureMode.BARCODE -> "对准商品条码"
+        CaptureMode.TEXT -> "对准包装上的生产日期"
+        CaptureMode.NAME -> "对准包装上最大的那排字（商品名）"
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
@@ -138,9 +175,16 @@ fun CameraCaptureScreen(
                                 lastTextRun = now
                                 textRecognizer.process(image)
                                     .addOnSuccessListener { result ->
-                                        val text = result.text
-                                        if (text.isNotBlank() && done.compareAndSet(false, true)) {
-                                            onText(text)
+                                        if (mode == CaptureMode.NAME) {
+                                            val cands = extractNameCandidates(result)
+                                            if (cands.isNotEmpty() && done.compareAndSet(false, true)) {
+                                                onCandidates(cands)
+                                            }
+                                        } else {
+                                            val text = result.text
+                                            if (text.isNotBlank() && done.compareAndSet(false, true)) {
+                                                onText(text)
+                                            }
                                         }
                                     }
                                     .addOnCompleteListener { proxy.close() }
