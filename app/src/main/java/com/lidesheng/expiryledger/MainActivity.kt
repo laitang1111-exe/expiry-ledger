@@ -107,6 +107,7 @@ fun AppRoot() {
 
         Screen.Entry -> EntryScreen(
             repo = repo,
+            autoScan = true,
             onBack = { screen = Screen.Home },
             onSaved = {
                 version++

@@ -443,6 +443,7 @@ fun EntryScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onDuplicate: () -> Unit,
+    autoScan: Boolean = false,
 ) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -456,6 +457,15 @@ fun EntryScreen(
     var knownInfo by remember { mutableStateOf<BarcodeInfo?>(null) }
     var camera by remember { mutableStateOf<CaptureMode?>(null) }
     var nameCandidates by remember { mutableStateOf<List<String>?>(null) }
+
+    // 从首页加号进来：先直接进扫码，扫到的条码填进这份草稿
+    var autoScanDone by remember { mutableStateOf(!autoScan) }
+    LaunchedEffect(Unit) {
+        if (!autoScanDone) {
+            autoScanDone = true
+            camera = CaptureMode.BARCODE
+        }
+    }
 
     fun applyBarcode(code: String) {
         barcode = code
@@ -522,7 +532,12 @@ fun EntryScreen(
                     }
                 }
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(onClick = {
+                    nameCandidates = null
+                    camera = CaptureMode.NAME
+                }) { Text("重试") }
+            },
             dismissButton = {
                 TextButton(onClick = { nameCandidates = null }) { Text("都不对，手动输") }
             }
