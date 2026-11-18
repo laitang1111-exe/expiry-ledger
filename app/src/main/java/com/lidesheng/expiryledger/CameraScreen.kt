@@ -65,10 +65,30 @@ private fun extractNameCandidates(result: com.google.mlkit.vision.text.Text): Li
         .take(5)
 }
 
+/** 识别成功时的"滴"声（SoundPool 延迟低，适合短音效） */
+private class BeepPlayer(context: android.content.Context) {
+    private val pool = android.media.SoundPool.Builder().setMaxStreams(2).build()
+    private val soundId: Int = pool.load(context, R.raw.di, 1)
+
+    fun play() {
+        try {
+            pool.play(soundId, 1f, 1f, 1, 0, 1f)
+        } catch (_: Exception) {
+        }
+    }
+
+    fun release() {
+        try {
+            pool.release()
+        } catch (_: Exception) {
+        }
+    }
+}
+
 /**
  * 摄像头取景：
  *   BARCODE 扫条码；TEXT 读生产日期；NAME 读商品名候选（字号最大的几块文字）
- * 识别成功后回调并自动关闭。
+ * 识别成功后播放"滴"声、回调并自动关闭。
  */
 @Composable
 fun CameraCaptureScreen(
@@ -80,6 +100,10 @@ fun CameraCaptureScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val beep = remember { BeepPlayer(context) }
+    DisposableEffect(Unit) {
+        onDispose { beep.release() }
+    }
 
     var granted by remember {
         mutableStateOf(
@@ -162,6 +186,7 @@ fun CameraCaptureScreen(
                                         val value = codes.mapNotNull { it.rawValue }
                                             .firstOrNull { it.length >= 6 }
                                         if (value != null && done.compareAndSet(false, true)) {
+                                            beep.play()
                                             onBarcode(value)
                                         }
                                     }
@@ -178,11 +203,13 @@ fun CameraCaptureScreen(
                                         if (mode == CaptureMode.NAME) {
                                             val cands = extractNameCandidates(result)
                                             if (cands.isNotEmpty() && done.compareAndSet(false, true)) {
+                                                beep.play()
                                                 onCandidates(cands)
                                             }
                                         } else {
                                             val text = result.text
                                             if (text.isNotBlank() && done.compareAndSet(false, true)) {
+                                                beep.play()
                                                 onText(text)
                                             }
                                         }
