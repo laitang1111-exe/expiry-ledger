@@ -1,4 +1,4 @@
-package com.lidesheng.expiryledger
+﻿package com.lidesheng.expiryledger
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -65,22 +65,47 @@ private fun extractNameCandidates(result: com.google.mlkit.vision.text.Text): Li
         .take(5)
 }
 
-/** 识别成功时的"滴"声（SoundPool 延迟低，适合短音效） */
-private class BeepPlayer(context: android.content.Context) {
-    private val pool = android.media.SoundPool.Builder().setMaxStreams(2).build()
-    private val soundId: Int = pool.load(context, R.raw.di, 1)
+/**
+ * 识别成功的"滴"声。
+ * 用进程级单例 + MediaPlayer：不用 SoundPool（异步加载可能来不及播），
+ * 也不随页面销毁释放（一释放声音就被掐断）。
+ */
+private object BeepPlayer {
+    private var player: android.media.MediaPlayer? = null
+    private var tone: android.media.ToneGenerator? = null
+    private var inited = false
 
-    fun play() {
+    fun play(context: android.content.Context) {
         try {
-            pool.play(soundId, 1f, 1f, 1, 0, 1f)
+            if (!inited) {
+                inited = true
+                player = android.media.MediaPlayer.create(context.applicationContext, R.raw.di)
+                    ?.apply {
+                        setAudioAttributes(
+                            android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build()
+                        )
+                        setVolume(1f, 1f)
+                        setOnCompletionListener { it.seekTo(0) }
+                    }
+                if (player == null) {
+                    tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 90)
+                }
+            }
+            val p = player
+            if (p != null) {
+                p.seekTo(0)
+                p.start()
+            } else {
+                tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 150)
+            }
         } catch (_: Exception) {
-        }
-    }
-
-    fun release() {
-        try {
-            pool.release()
-        } catch (_: Exception) {
+            try {
+                tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 150)
+            } catch (_: Exception) {
+            }
         }
     }
 }
@@ -100,10 +125,6 @@ fun CameraCaptureScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val beep = remember { BeepPlayer(context) }
-    DisposableEffect(Unit) {
-        onDispose { beep.release() }
-    }
 
     var granted by remember {
         mutableStateOf(
@@ -186,7 +207,7 @@ fun CameraCaptureScreen(
                                         val value = codes.mapNotNull { it.rawValue }
                                             .firstOrNull { it.length >= 6 }
                                         if (value != null && done.compareAndSet(false, true)) {
-                                            beep.play()
+                                            BeepPlayer.play(context)
                                             onBarcode(value)
                                         }
                                     }
@@ -203,13 +224,13 @@ fun CameraCaptureScreen(
                                         if (mode == CaptureMode.NAME) {
                                             val cands = extractNameCandidates(result)
                                             if (cands.isNotEmpty() && done.compareAndSet(false, true)) {
-                                                beep.play()
+                                                BeepPlayer.play(context)
                                                 onCandidates(cands)
                                             }
                                         } else {
                                             val text = result.text
                                             if (text.isNotBlank() && done.compareAndSet(false, true)) {
-                                                beep.play()
+                                                BeepPlayer.play(context)
                                                 onText(text)
                                             }
                                         }

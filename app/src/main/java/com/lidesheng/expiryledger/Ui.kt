@@ -350,6 +350,13 @@ private fun BatchRow(
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp
             )
+            Dates.approximateMonths(remain)?.let { approx ->
+                Text(
+                    approx,
+                    color = Color(stage.colorArgb).copy(alpha = 0.75f),
+                    fontSize = 11.sp
+                )
+            }
             Spacer(Modifier.height(4.dp))
             OutlinedButton(
                 onClick = { confirm = true },

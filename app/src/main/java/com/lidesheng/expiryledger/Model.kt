@@ -83,6 +83,19 @@ object Dates {
         else -> "剩余 $days 天"
     }
 
+    /** 把天数换算成"约等于 N 个(半)月"，用于剩余天数下面那行小字 */
+    fun approximateMonths(days: Long): String? {
+        if (days <= 0) return null
+        val months = days / 30.0
+        val half = Math.round(months * 2) / 2.0
+        return when {
+            half < 0.5 -> "约等于不到半个月"
+            half == 0.5 -> "约等于半个月"
+            half == Math.floor(half) -> "约等于 ${half.toInt()} 个月"
+            else -> "约等于 ${(half - 0.5).toInt()} 个半月"
+        }
+    }
+
     fun parseDate(text: String?): LocalDate? {
         if (text.isNullOrBlank()) return null
         return try {
