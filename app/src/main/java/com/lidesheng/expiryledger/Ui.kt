@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -68,6 +69,7 @@ private fun EditBatchDialog(
     onCaptureClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    var name by remember { mutableStateOf(batch.name) }
     var production by remember { mutableStateOf(batch.productionDate) }
     var valueText by remember { mutableStateOf(batch.shelfLifeValue.toString()) }
     var unit by remember { mutableStateOf(batch.unit) }
@@ -81,7 +83,15 @@ private fun EditBatchDialog(
         title = { Text("编辑这一批") },
         text = {
             Column {
-                Text("${batch.name}　${batch.barcode}", fontSize = 12.sp,
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("商品名称") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text("条码 ${batch.barcode}", fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.outline)
                 Spacer(Modifier.height(10.dp))
 
@@ -158,7 +168,7 @@ private fun EditBatchDialog(
                     error = "该条码已有同批日期，添加失败！"
                     return@TextButton
                 }
-                repo.updateBatch(batch.id, production, v, unit)
+                repo.updateBatch(batch.id, name.trim().ifBlank { "未命名商品" }, production, v, unit)
                 onSaved()
             }) { Text("保存") }
         },
@@ -181,6 +191,7 @@ fun HomeScreen(
     onChanged: () -> Unit,
     onOpenStage: (Int) -> Unit,
     onCaptureDate: (Batch) -> Unit,
+    onSearch: () -> Unit,
 ) {
     val today = LocalDate.now()
     val all = remember(version) { repo.listActive() }
@@ -210,6 +221,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("保质期台账") },
                 actions = {
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                    }
                     IconButton(onClick = onTrash) {
                         Icon(Icons.Filled.Delete, contentDescription = "回收站")
                     }
@@ -434,6 +448,82 @@ fun StageListScreen(
     }
 }
 
+// ═══════════════════════ 搜索 ═══════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchScreen(
+    repo: LedgerRepository,
+    version: Int,
+    onBack: () -> Unit,
+    onProcessed: (Long) -> Unit,
+    onChanged: () -> Unit,
+    onCaptureDate: (Batch) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val results = remember(query, version) { repo.search(query) }
+    val today = LocalDate.now()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("搜索") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        }
+    ) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("条码 / 名称 / 日期（如 2026-11 或 2026-11-25）") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        TextButton(onClick = { query = "" }) { Text("清空") }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
+            )
+
+            Text(
+                if (query.isBlank()) "全部 ${results.size} 批" else "找到 ${results.size} 批",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+
+            if (results.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (query.isBlank()) "还没有记录" else "没有匹配的批次",
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(results, key = { it.id }) { b ->
+                        BatchRow(
+                            batch = b,
+                            today = today,
+                            repo = repo,
+                            onChanged = onChanged,
+                            onProcessed = { onProcessed(b.id) },
+                            onCaptureDate = onCaptureDate,
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ═══════════════════════ 录入 ═══════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -489,12 +579,17 @@ fun EntryScreen(
             },
             onText = { raw ->
                 val ex = TextExtract.extract(raw)
-                ex.productionDate?.let { production = it }
+                val today = LocalDate.now()
+                val rawDate = ex.productionDate
+                // 生产日期必须早于今天，否则丢弃
+                val okDate = rawDate?.takeIf { it.isBefore(today) }
+                okDate?.let { production = it }
                 ex.value?.let { valueText = it.toString() }
                 ex.unit?.let { unit = it }
                 camera = null
                 val msg = when {
-                    ex.productionDate != null -> "识别到生产日期 ${ex.productionDate.format(df)}"
+                    okDate != null -> "识别到生产日期 ${okDate.format(df)}"
+                    rawDate != null -> "识别到 ${rawDate.format(df)}，不早于今天，已丢弃"
                     else -> "没识别出日期，已保留原文，请手动填写"
                 }
                 scope.launch { snackbar.showSnackbar(msg) }

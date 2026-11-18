@@ -147,16 +147,30 @@ class LedgerRepository(context: Context) {
         helper.writableDatabase.update("batch", cv, "id = ?", arrayOf(id.toString()))
     }
 
-    /** 改生产日期 / 改保质期：到期日按日历重算 */
-    fun updateBatch(id: Long, productionDate: LocalDate, value: Int, unit: LifeUnit) {
+    /** 改名称 / 生产日期 / 保质期：到期日按日历重算 */
+    fun updateBatch(id: Long, name: String, productionDate: LocalDate, value: Int, unit: LifeUnit) {
         val expiry = Dates.computeExpiry(productionDate, value, unit)
         val cv = ContentValues().apply {
+            put("name", name)
             put("productionDate", productionDate.toString())
             put("shelfLifeValue", value)
             put("shelfLifeUnit", unit.label)
             put("expiryDate", expiry.toString())
         }
         helper.writableDatabase.update("batch", cv, "id = ?", arrayOf(id.toString()))
+    }
+
+    /** 搜索：条码包含，或生产/到期日期包含（如 2026-11 / 2026-11-25） */
+    fun search(keyword: String): List<Batch> {
+        val q = keyword.trim()
+        if (q.isEmpty()) return listActive()
+        val norm = q.replace('/', '-').replace('.', '-')
+        return listActive().filter { b ->
+            b.barcode.contains(q) ||
+                b.name.contains(q, ignoreCase = true) ||
+                b.productionDate.toString().contains(norm) ||
+                b.expiryDate.toString().contains(norm)
+        }
     }
 
     fun addBatch(

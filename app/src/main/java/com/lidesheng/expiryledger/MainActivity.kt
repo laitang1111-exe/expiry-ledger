@@ -18,6 +18,7 @@ sealed interface Screen {
     data object Home : Screen
     data object Entry : Screen
     data object Trash : Screen
+    data object Search : Screen
     data class StageList(val days: Int) : Screen
 
     /** 给某一批拍日期改生产日期；returnStage = null 表示回首页 */
@@ -68,6 +69,7 @@ fun AppRoot() {
             onChanged = { version++ },
             onOpenStage = { days -> screen = Screen.StageList(days) },
             onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, null) },
+            onSearch = { screen = Screen.Search },
         )
 
         is Screen.StageList -> StageListScreen(
@@ -89,10 +91,15 @@ fun AppRoot() {
                 onBarcode = { },
                 onText = { raw ->
                     val ex = TextExtract.extract(raw)
-                    val date = ex.productionDate
+                    val today = java.time.LocalDate.now()
+                    val rawDate = ex.productionDate
+                    // 生产日期必须早于今天，否则丢弃
+                    val date = rawDate?.takeIf { it.isBefore(today) }
                     if (date != null) {
                         repo.updateProductionDate(s.batchId, date)
-                        homeNotice = "已把生产日期改为 ${date}"
+                        homeNotice = "已把生产日期改为 $date"
+                    } else if (rawDate != null) {
+                        homeNotice = "识别到 $rawDate，不早于今天（$today），已丢弃"
                     } else {
                         homeNotice = "没识别出日期，请手动改"
                     }
@@ -104,6 +111,18 @@ fun AppRoot() {
                 },
             )
         }
+
+        Screen.Search -> SearchScreen(
+            repo = repo,
+            version = version,
+            onBack = { screen = Screen.Home },
+            onProcessed = { id ->
+                repo.markProcessed(id)
+                version++
+            },
+            onChanged = { version++ },
+            onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, null) },
+        )
 
         Screen.Entry -> EntryScreen(
             repo = repo,
