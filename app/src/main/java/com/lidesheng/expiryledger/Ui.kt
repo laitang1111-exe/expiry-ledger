@@ -91,8 +91,11 @@ private fun EditBatchDialog(
                     singleLine = true,
                 )
                 Spacer(Modifier.height(6.dp))
-                Text("条码 ${batch.barcode}", fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.outline)
+                Text(
+                    "条码 ${batch.barcode}　（改名会同步到同条码的所有批次）",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.outline
+                )
                 Spacer(Modifier.height(10.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {

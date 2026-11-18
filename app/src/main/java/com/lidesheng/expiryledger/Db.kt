@@ -147,8 +147,13 @@ class LedgerRepository(context: Context) {
         helper.writableDatabase.update("batch", cv, "id = ?", arrayOf(id.toString()))
     }
 
-    /** 改名称 / 生产日期 / 保质期：到期日按日历重算 */
+    /** 改名称 / 生产日期 / 保质期：到期日按日历重算；名称同步到同条码的所有批次 */
     fun updateBatch(id: Long, name: String, productionDate: LocalDate, value: Int, unit: LifeUnit) {
+        var barcode: String? = null
+        helper.readableDatabase.rawQuery(
+            "SELECT barcode FROM batch WHERE id = ?", arrayOf(id.toString())
+        ).use { c -> if (c.moveToFirst()) barcode = c.getString(0) }
+
         val expiry = Dates.computeExpiry(productionDate, value, unit)
         val cv = ContentValues().apply {
             put("name", name)
@@ -158,6 +163,26 @@ class LedgerRepository(context: Context) {
             put("expiryDate", expiry.toString())
         }
         helper.writableDatabase.update("batch", cv, "id = ?", arrayOf(id.toString()))
+
+        if (!barcode.isNullOrBlank()) {
+            // 同一商品（同条码）的所有批次一起改名，回收站里的也算
+            val nameOnly = ContentValues().apply { put("name", name) }
+            helper.writableDatabase.update("batch", nameOnly, "barcode = ?", arrayOf(barcode))
+
+            // 条码档案也改名，下次扫码自动带出的是新名字
+            val affected = helper.writableDatabase.update(
+                "barcode_info", nameOnly, "barcode = ?", arrayOf(barcode)
+            )
+            if (affected == 0) {
+                val info = ContentValues().apply {
+                    put("barcode", barcode)
+                    put("name", name)
+                }
+                helper.writableDatabase.insertWithOnConflict(
+                    "barcode_info", null, info, SQLiteDatabase.CONFLICT_IGNORE
+                )
+            }
+        }
     }
 
     /** 搜索：条码包含，或生产/到期日期包含（如 2026-11 / 2026-11-25） */
