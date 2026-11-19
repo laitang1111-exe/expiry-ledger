@@ -93,23 +93,21 @@ object AutoBackup {
     fun latestFile(): java.io.File? {
         val d = dir()
         if (!d.isDirectory) return null
-        return d.listFiles { f -> f.isFile && f.name.startsWith("赏味期_") && f.name.endsWith(".json") }
-            ?.maxByOrNull { it.lastModified() }
+        return d.listFiles { f ->
+            f.isFile && Regex("^\\d{14} - 存档\\.json$").matches(f.name)
+        }?.maxByOrNull { it.lastModified() }
     }
 
-    /** 拍一份快照，返回写入的文件（失败返回 null） */
+    /** 拍一份快照，返回写入的文件（失败返回 null）。文件名：20261120121354 - 存档.json */
     fun snapshot(repo: LedgerRepository, action: String): java.io.File? {
         if (!canWrite()) return null
         return try {
             val d = dir()
             if (!d.exists()) d.mkdirs()
             val now = java.time.LocalDateTime.now()
-            val stamp = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-            val safeAction = action.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_")
-            val file = java.io.File(d, "赏味期_${stamp}_${safeAction}.json")
-            val text = Backup.exportJson(repo)
-            file.writeText(text, Charsets.UTF_8)
-            java.io.File(d, "最新.json").writeText(text, Charsets.UTF_8)
+            val stamp = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+            val file = java.io.File(d, "$stamp - 存档.json")
+            file.writeText(Backup.exportJson(repo), Charsets.UTF_8)
             file
         } catch (_: Exception) {
             null
