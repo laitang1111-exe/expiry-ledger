@@ -1,4 +1,4 @@
-﻿package com.lidesheng.expiryledger
+package com.lidesheng.expiryledger
 
 import android.app.DatePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -911,7 +911,14 @@ fun TrashScreen(
         )
     }
 }
-// ═══════════════════════ 设置（导出 / 导入） ═══════════════════════
+
+// ═══════════════════════ 设置（权限 / 导出 / 导入） ═══════════════════════
+
+private fun backupDir(): java.io.File =
+    java.io.File(
+        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+        "保质期台账"
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -924,10 +931,34 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf("") }
+    var hasAllFiles by remember { mutableStateOf(android.os.Environment.isExternalStorageManager()) }
 
     val all = remember(version) { repo.listAll() }
     val activeCount = all.count { it.deletedAt == null }
     val trashCount = all.size - activeCount
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        hasAllFiles = android.os.Environment.isExternalStorageManager()
+        status = if (hasAllFiles) "已获得全部文件访问权限" else "仍未获得权限（可以稍后再申请）"
+    }
+
+    fun requestAllFiles() {
+        try {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                android.net.Uri.parse("package:" + context.packageName)
+            )
+            permLauncher.launch(intent)
+        } catch (_: Exception) {
+            try {
+                permLauncher.launch(android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            } catch (e: Exception) {
+                status = "这台手机打不开权限页，请到系统设置 → 应用 → 保质期管理器 → 权限里手动开"
+            }
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -981,7 +1012,7 @@ fun SettingsScreen(
         }
     ) { pad ->
         Column(
-            Modifier.fillMaxSize().padding(pad).padding(16.dp),
+            Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Card(Modifier.fillMaxWidth()) {
@@ -992,33 +1023,105 @@ fun SettingsScreen(
                 }
             }
 
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("文件权限", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (hasAllFiles) "已获得「所有文件访问权限」" else "未获得：只能通过系统文件选择器导出/导入",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (!hasAllFiles) {
+                        Button(onClick = { requestAllFiles() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("申请全部文件访问权限")
+                        }
+                    } else {
+                        Text(
+                            "备份目录：Download/保质期台账/",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+
             Button(
                 onClick = {
                     val name = "保质期台账_" + LocalDate.now().toString() + ".json"
                     exportLauncher.launch(name)
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) { Text("导出到文件（JSON）") }
+            ) { Text("导出到文件（自己选位置）") }
 
             OutlinedButton(
                 onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
                 modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) { Text("从文件导入（JSON）") }
+            ) { Text("从文件导入（自己选文件）") }
+
+            if (hasAllFiles) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val text = withContext(Dispatchers.IO) { Backup.exportJson(repo) }
+                                val f = withContext(Dispatchers.IO) {
+                                    val dir = backupDir()
+                                    dir.mkdirs()
+                                    val file = java.io.File(dir, "保质期台账_" + LocalDate.now().toString() + ".json")
+                                    file.writeText(text, Charsets.UTF_8)
+                                    file
+                                }
+                                status = "已写入：${f.absolutePath}"
+                            } catch (e: Exception) {
+                                status = "写入失败：${e.message}"
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) { Text("快速导出到 Download/保质期台账/") }
+
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                val file = withContext(Dispatchers.IO) {
+                                    val dir = backupDir()
+                                    dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+                                        ?.maxByOrNull { it.lastModified() }
+                                }
+                                if (file == null) {
+                                    status = "Download/保质期台账/ 里还没有备份文件"
+                                } else {
+                                    val text = withContext(Dispatchers.IO) { file.readText(Charsets.UTF_8) }
+                                    val r = withContext(Dispatchers.IO) { Backup.importJson(repo, text) }
+                                    status = "已导入 ${file.name}：新增 ${r.inserted}，跳过 ${r.skipped}，无效 ${r.failed}"
+                                    onChanged()
+                                }
+                            } catch (e: Exception) {
+                                status = "导入失败：${e.message}"
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) { Text("从该目录导入最新备份") }
+            }
 
             if (status.isNotBlank()) {
                 Card(
                     Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                 ) {
-                    Text(status, modifier = Modifier.padding(14.dp), fontSize = 14.sp)
+                    Text(status, modifier = Modifier.padding(14.dp), fontSize = 13.sp)
                 }
             }
 
             Text(
                 "说明：\n" +
-                    "· 导出的 JSON 含清单和回收站的全部记录，可用来备份或换手机迁移\n" +
-                    "· 导入是「合并」：同条码 + 同生产日期 + 同保质期的记录会跳过，不会重复\n" +
-                    "· 导入时条码档案（名称/上次保质期）也会一并补上",
+                    "· 导出的 JSON 含清单和回收站的全部记录\n" +
+                    "· 导入是合并式：同条码 + 同生产日期 + 同保质期会跳过\n" +
+                    "· 全部文件访问权限只用于把自己写进 Download 目录，不改动其它应用的文件",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.outline
             )
