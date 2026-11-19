@@ -19,6 +19,7 @@ sealed interface Screen {
     data object Entry : Screen
     data object Trash : Screen
     data object Search : Screen
+    data object Settings : Screen
     data class StageList(val days: Int) : Screen
 
     /** 给某一批拍日期改生产日期；returnStage = null 表示回首页 */
@@ -70,6 +71,7 @@ fun AppRoot() {
             onOpenStage = { days -> screen = Screen.StageList(days) },
             onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, null) },
             onSearch = { screen = Screen.Search },
+            onSettings = { screen = Screen.Settings },
         )
 
         is Screen.StageList -> StageListScreen(
@@ -122,6 +124,13 @@ fun AppRoot() {
             },
             onChanged = { version++ },
             onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, null) },
+        )
+
+        Screen.Settings -> SettingsScreen(
+            repo = repo,
+            version = version,
+            onBack = { screen = Screen.Home },
+            onChanged = { version++ },
         )
 
         Screen.Entry -> EntryScreen(

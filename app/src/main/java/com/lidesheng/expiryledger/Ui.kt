@@ -1,6 +1,8 @@
-package com.lidesheng.expiryledger
+﻿package com.lidesheng.expiryledger
 
 import android.app.DatePickerDialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +17,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -195,6 +200,7 @@ fun HomeScreen(
     onOpenStage: (Int) -> Unit,
     onCaptureDate: (Batch) -> Unit,
     onSearch: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val today = LocalDate.now()
     val all = remember(version) { repo.listActive() }
@@ -229,6 +235,9 @@ fun HomeScreen(
                     }
                     IconButton(onClick = onTrash) {
                         Icon(Icons.Filled.Delete, contentDescription = "回收站")
+                    }
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "设置")
                     }
                 }
             )
@@ -900,5 +909,119 @@ fun TrashScreen(
                 TextButton(onClick = { pendingDelete = null }) { Text("取消") }
             }
         )
+    }
+}
+// ═══════════════════════ 设置（导出 / 导入） ═══════════════════════
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    repo: LedgerRepository,
+    version: Int,
+    onBack: () -> Unit,
+    onChanged: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf("") }
+
+    val all = remember(version) { repo.listAll() }
+    val activeCount = all.count { it.deletedAt == null }
+    val trashCount = all.size - activeCount
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val text = withContext(Dispatchers.IO) { Backup.exportJson(repo) }
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { os ->
+                            os.write(text.toByteArray(Charsets.UTF_8))
+                        }
+                    }
+                    status = "导出成功：${all.size} 条（含回收站 $trashCount 条）"
+                } catch (e: Exception) {
+                    status = "导出失败：${e.message}"
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val text = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
+                    }
+                    val r = withContext(Dispatchers.IO) { Backup.importJson(repo, text) }
+                    status = "导入完成：新增 ${r.inserted} 条，跳过重复 ${r.skipped} 条，无效 ${r.failed} 条"
+                    onChanged()
+                } catch (e: Exception) {
+                    status = "导入失败：${e.message}"
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("设置") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                }
+            )
+        }
+    ) { pad ->
+        Column(
+            Modifier.fillMaxSize().padding(pad).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("当前数据", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(6.dp))
+                    Text("清单 $activeCount 条　回收站 $trashCount 条　合计 ${all.size} 条", fontSize = 16.sp)
+                }
+            }
+
+            Button(
+                onClick = {
+                    val name = "保质期台账_" + LocalDate.now().toString() + ".json"
+                    exportLauncher.launch(name)
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp)
+            ) { Text("导出到文件（JSON）") }
+
+            OutlinedButton(
+                onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                modifier = Modifier.fillMaxWidth().height(50.dp)
+            ) { Text("从文件导入（JSON）") }
+
+            if (status.isNotBlank()) {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) {
+                    Text(status, modifier = Modifier.padding(14.dp), fontSize = 14.sp)
+                }
+            }
+
+            Text(
+                "说明：\n" +
+                    "· 导出的 JSON 含清单和回收站的全部记录，可用来备份或换手机迁移\n" +
+                    "· 导入是「合并」：同条码 + 同生产日期 + 同保质期的记录会跳过，不会重复\n" +
+                    "· 导入时条码档案（名称/上次保质期）也会一并补上",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
     }
 }

@@ -61,6 +61,51 @@ class LedgerRepository(context: Context) {
 
     fun listTrash(): List<Batch> = query("deletedAt IS NOT NULL", "deletedAt DESC")
 
+    /** 导出用：清单 + 回收站全部记录 */
+    fun listAll(): List<Batch> = query("1 = 1", "expiryDate ASC")
+
+    /** 导入一条：已存在（同条码+同生产日期+同保质期，含回收站）则跳过，返回是否插入 */
+    fun importOne(
+        barcode: String,
+        name: String,
+        productionDate: LocalDate,
+        value: Int,
+        unit: LifeUnit,
+        deletedAt: Long?,
+        createdAt: Long?,
+    ): Boolean {
+        val dup = helper.readableDatabase.rawQuery(
+            "SELECT 1 FROM batch WHERE barcode = ? AND productionDate = ? " +
+                "AND shelfLifeValue = ? AND shelfLifeUnit = ? LIMIT 1",
+            arrayOf(barcode, productionDate.toString(), value.toString(), unit.label)
+        ).use { it.moveToFirst() }
+        if (dup) return false
+
+        val expiry = Dates.computeExpiry(productionDate, value, unit)
+        val cv = ContentValues().apply {
+            put("barcode", barcode)
+            put("name", name)
+            put("productionDate", productionDate.toString())
+            put("shelfLifeValue", value)
+            put("shelfLifeUnit", unit.label)
+            put("expiryDate", expiry.toString())
+            if (deletedAt == null) putNull("deletedAt") else put("deletedAt", deletedAt)
+            put("createdAt", createdAt ?: System.currentTimeMillis())
+        }
+        helper.writableDatabase.insert("batch", null, cv)
+
+        val info = ContentValues().apply {
+            put("barcode", barcode)
+            put("name", name)
+            put("lastValue", value)
+            put("lastUnit", unit.label)
+        }
+        helper.writableDatabase.insertWithOnConflict(
+            "barcode_info", null, info, SQLiteDatabase.CONFLICT_REPLACE
+        )
+        return true
+    }
+
     fun countByStage(today: LocalDate = LocalDate.now()): Map<Stage, Int> {
         val map = mutableMapOf<Stage, Int>()
         for (b in listActive()) {
