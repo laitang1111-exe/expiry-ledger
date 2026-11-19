@@ -1,4 +1,4 @@
-# 保质期管理器（expiry-ledger）
+﻿# 保质期管理器（expiry-ledger）
 
 给门店理货员用的离线保质期台账：扫条码入库、拍日期 OCR、按 7/10/20/30 天分段看板、已处理进回收站、行内编辑、自动备份。
 
@@ -42,8 +42,8 @@
   "count": 1,
   "batches": [
     {
-      "barcode": "6925303762889",
-      "name": "统一老坛酸菜",
+      "barcode": "12345678",
+      "name": "实例样本",
       "productionDate": "2026-08-04",
       "shelfLifeValue": 12,
       "shelfLifeUnit": "月",
