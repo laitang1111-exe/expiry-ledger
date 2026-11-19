@@ -1047,6 +1047,38 @@ fun SettingsScreen(
                 }
             }
 
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("自动备份", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "每次保存（新增 / 编辑 / 已处理 / 恢复 / 删除 / 导入）都会自动拍一份快照",
+                        fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text("目录：/sdcard/赏味期/", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    val latest = remember(version) { AutoBackup.latestFile() }
+                    if (latest != null) {
+                        Text(
+                            "最近一次：${latest.name}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                val f = withContext(Dispatchers.IO) { AutoBackup.snapshot(repo, "手动备份") }
+                                status = if (f != null) "已备份：${f.absolutePath}"
+                                else "备份失败：没有全部文件访问权限，或目录不可写"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("立即备份一次") }
+                }
+            }
+
             Button(
                 onClick = {
                     val name = "保质期台账_" + LocalDate.now().toString() + ".json"

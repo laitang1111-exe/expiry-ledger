@@ -75,3 +75,44 @@ object Backup {
         return ImportResult(inserted, skipped, failed)
     }
 }
+
+/**
+ * 每做一次保存（新增/编辑/已处理/恢复/彻底删除/导入）就自动拍一份快照，
+ * 写到手机根目录的 /sdcard/赏味期/ 下，文件名带时间和动作。
+ */
+object AutoBackup {
+
+    const val DIR_NAME = "赏味期"
+
+    fun dir(): java.io.File =
+        java.io.File(android.os.Environment.getExternalStorageDirectory(), DIR_NAME)
+
+    fun canWrite(): Boolean = android.os.Environment.isExternalStorageManager()
+
+    /** 最近一次备份文件（没有则 null） */
+    fun latestFile(): java.io.File? {
+        val d = dir()
+        if (!d.isDirectory) return null
+        return d.listFiles { f -> f.isFile && f.name.startsWith("赏味期_") && f.name.endsWith(".json") }
+            ?.maxByOrNull { it.lastModified() }
+    }
+
+    /** 拍一份快照，返回写入的文件（失败返回 null） */
+    fun snapshot(repo: LedgerRepository, action: String): java.io.File? {
+        if (!canWrite()) return null
+        return try {
+            val d = dir()
+            if (!d.exists()) d.mkdirs()
+            val now = java.time.LocalDateTime.now()
+            val stamp = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+            val safeAction = action.replace(Regex("[\\\\/:*?\"<>|\\s]"), "_")
+            val file = java.io.File(d, "赏味期_${stamp}_${safeAction}.json")
+            val text = Backup.exportJson(repo)
+            file.writeText(text, Charsets.UTF_8)
+            java.io.File(d, "最新.json").writeText(text, Charsets.UTF_8)
+            file
+        } catch (_: Exception) {
+            null
+        }
+    }
+}

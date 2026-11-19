@@ -1,4 +1,4 @@
-package com.lidesheng.expiryledger
+﻿package com.lidesheng.expiryledger
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 
@@ -48,6 +49,15 @@ fun AppRoot() {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var version by remember { mutableIntStateOf(0) }
     var homeNotice by remember { mutableStateOf<String?>(null) }
+    val backupScope = rememberCoroutineScope()
+
+    // 任何一次保存动作后：刷新界面 + 往 /sdcard/赏味期/ 拍一份快照
+    fun afterChange(action: String) {
+        version++
+        backupScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            AutoBackup.snapshot(repo, action)
+        }
+    }
 
     // 系统返回键：不在首页时回首页；键盘弹着时先交给系统收键盘
     val imeVisible = WindowInsets.isImeVisible
@@ -65,9 +75,9 @@ fun AppRoot() {
             onTrash = { screen = Screen.Trash },
             onProcessed = { id ->
                 repo.markProcessed(id)
-                version++
+                afterChange("标记已处理")
             },
-            onChanged = { version++ },
+            onChanged = { afterChange("编辑保存") },
             onOpenStage = { days -> screen = Screen.StageList(days) },
             onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, null) },
             onSearch = { screen = Screen.Search },
@@ -81,9 +91,9 @@ fun AppRoot() {
             onBack = { screen = Screen.Home },
             onProcessed = { id ->
                 repo.markProcessed(id)
-                version++
+                afterChange("标记已处理")
             },
-            onChanged = { version++ },
+            onChanged = { afterChange("编辑保存") },
             onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, s.days) },
         )
 
@@ -100,12 +110,12 @@ fun AppRoot() {
                     if (date != null) {
                         repo.updateProductionDate(s.batchId, date)
                         homeNotice = "已把生产日期改为 $date"
+                        afterChange("拍日期改生产日期")
                     } else if (rawDate != null) {
                         homeNotice = "识别到 $rawDate，不早于今天（$today），已丢弃"
                     } else {
                         homeNotice = "没识别出日期，请手动改"
                     }
-                    version++
                     screen = if (s.returnStage == null) Screen.Home else Screen.StageList(s.returnStage)
                 },
                 onClose = {
@@ -120,9 +130,9 @@ fun AppRoot() {
             onBack = { screen = Screen.Home },
             onProcessed = { id ->
                 repo.markProcessed(id)
-                version++
+                afterChange("标记已处理")
             },
-            onChanged = { version++ },
+            onChanged = { afterChange("编辑保存") },
             onCaptureDate = { b -> screen = Screen.OcrEdit(b.id, null) },
         )
 
@@ -130,7 +140,7 @@ fun AppRoot() {
             repo = repo,
             version = version,
             onBack = { screen = Screen.Home },
-            onChanged = { version++ },
+            onChanged = { afterChange("导入") },
         )
 
         Screen.Entry -> EntryScreen(
@@ -138,7 +148,7 @@ fun AppRoot() {
             autoScan = true,
             onBack = { screen = Screen.Home },
             onSaved = {
-                version++
+                afterChange("新增批次")
                 screen = Screen.Home
             },
             onDuplicate = {
@@ -152,7 +162,9 @@ fun AppRoot() {
             repo = repo,
             version = version,
             onBack = { screen = Screen.Home },
-            onChanged = { version++ },
+            onChanged = { afterChange("回收站操作") },
         )
     }
 }
+
+
