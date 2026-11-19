@@ -1,8 +1,9 @@
-﻿package com.lidesheng.expiryledger
+package com.lidesheng.expiryledger
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Size
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -139,6 +140,9 @@ fun CameraCaptureScreen(
     LaunchedEffect(Unit) {
         if (!granted) launcher.launch(Manifest.permission.CAMERA)
     }
+
+    // 系统返回键：只关掉相机回到上一页（录入表单的草稿不能丢）
+    BackHandler(enabled = true) { onClose() }
 
     if (!granted) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
