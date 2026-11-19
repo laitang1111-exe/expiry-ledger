@@ -558,6 +558,18 @@ fun EntryScreen(
     var camera by remember { mutableStateOf<CaptureMode?>(null) }
     var nameCandidates by remember { mutableStateOf<List<String>?>(null) }
 
+    // 返回键两段式：第一次提示，2 秒内再按一次才退出到主页（防止误触丢草稿）
+    var lastBackAt by remember { mutableStateOf(0L) }
+    androidx.activity.compose.BackHandler(enabled = true) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastBackAt <= 2000L) {
+            onBack()
+        } else {
+            lastBackAt = now
+            scope.launch { snackbar.showSnackbar("再按一次返回退出到主页（草稿会丢失）") }
+        }
+    }
+
     // 从首页加号进来：先直接进扫码，扫到的条码填进这份草稿
     var autoScanDone by remember { mutableStateOf(!autoScan) }
     LaunchedEffect(Unit) {
