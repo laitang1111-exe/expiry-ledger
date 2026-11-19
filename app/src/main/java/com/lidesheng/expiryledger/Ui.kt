@@ -471,8 +471,23 @@ fun SearchScreen(
     onCaptureDate: (Batch) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var scanning by remember { mutableStateOf(false) }
     val results = remember(query, version) { repo.search(query) }
     val today = LocalDate.now()
+
+    // 搜索页只扫条码：扫到什么就把什么填进搜索框，立刻出结果
+    if (scanning) {
+        CameraCaptureScreen(
+            mode = CaptureMode.BARCODE,
+            onBarcode = { code ->
+                query = code
+                scanning = false
+            },
+            onText = { },
+            onClose = { scanning = false },
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -487,19 +502,31 @@ fun SearchScreen(
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("条码 / 名称 / 日期（如 2026-11 或 2026-11-25）") },
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        TextButton(onClick = { query = "" }) { Text("清空") }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("条码 / 名称 / 日期（如 2026-11 或 2026-11-25）") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            TextButton(onClick = { query = "" }) { Text("清空") }
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                FilledTonalButton(
+                    onClick = { scanning = true },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                ) {
+                    Text("扫码")
+                }
+            }
 
             Text(
                 if (query.isBlank()) "全部 ${results.size} 批" else "找到 ${results.size} 批",
