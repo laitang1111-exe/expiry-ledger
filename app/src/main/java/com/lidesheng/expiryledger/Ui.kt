@@ -1,4 +1,4 @@
-package com.lidesheng.expiryledger
+﻿package com.lidesheng.expiryledger
 
 import android.app.DatePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -492,7 +492,7 @@ fun SearchScreen(
                 query = code
                 scanning = false
             },
-            onText = { },
+            onText = { null },
             onClose = { scanning = false },
         )
         return
@@ -586,6 +586,7 @@ fun EntryScreen(
     val scope = rememberCoroutineScope()
 
     var barcode by remember { mutableStateOf("") }
+    var smartText by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var production by remember { mutableStateOf(LocalDate.now()) }
     var valueText by remember { mutableStateOf("6") }
@@ -637,20 +638,35 @@ fun EntryScreen(
             },
             onText = { raw ->
                 val ex = TextExtract.extract(raw)
+                val parsed = InfoParser.parse(raw)
                 val today = LocalDate.now()
-                val rawDate = ex.productionDate
-                // 生产日期必须早于今天，否则丢弃
-                val okDate = rawDate?.takeIf { it.isBefore(today) }
-                okDate?.let { production = it }
-                ex.value?.let { valueText = it.toString() }
-                ex.unit?.let { unit = it }
-                camera = null
-                val msg = when {
-                    okDate != null -> "识别到生产日期 ${okDate.format(df)}"
-                    rawDate != null -> "识别到 ${rawDate.format(df)}，不早于今天，已丢弃"
-                    else -> "没识别出日期，已保留原文，请手动填写"
+                var rawDate = ex.productionDate
+                var how = "识别到生产日期"
+                // 相机里只看到“保质期至某日”：用它的保质期（没有就用表单当前值）反推生产日期
+                if (rawDate == null) {
+                    val expiry = parsed.expiryDate
+                    val vv = parsed.value ?: valueText.toIntOrNull()
+                    val uu = parsed.unit ?: unit
+                    if (expiry != null && vv != null && vv > 0) {
+                        val derived = Dates.productionFromExpiry(expiry, vv, uu)
+                        if (derived.year >= 1990) {
+                            rawDate = derived
+                            how = "按保质期至 ${expiry.format(df)} 反推"
+                        }
+                    }
                 }
-                scope.launch { snackbar.showSnackbar(msg) }
+                if (rawDate != null && rawDate.isBefore(today)) {
+                    production = rawDate
+                    (parsed.value ?: ex.value)?.let { valueText = it.toString() }
+                    (parsed.unit ?: ex.unit)?.let { unit = it }
+                    camera = null
+                    scope.launch { snackbar.showSnackbar("$how ${rawDate.format(df)}") }
+                    null
+                } else if (rawDate != null) {
+                    "识别到 ${rawDate.format(df)}，不早于今天，请移动摄像头换个日期"
+                } else {
+                    "没识别出日期，请移动摄像头对准生产日期或保质期至"
+                }
             },
             onClose = { camera = null },
             onCandidates = { cands ->
@@ -713,6 +729,7 @@ fun EntryScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
             OutlinedTextField(
                 value = barcode,
                 onValueChange = { applyBarcode(it.trim()) },
@@ -765,6 +782,71 @@ fun EntryScreen(
                     }
                 }
             }
+
+            // 粘贴一段包装上的文字，识别出生产日期、保质期、商品名
+            OutlinedTextField(
+                value = smartText,
+                onValueChange = { smartText = it },
+                label = { Text("粘贴文字识别：生产日期 / 保质期 / 商品名") },
+                placeholder = { Text("如：王爱林纯净水 20260809 保质期18个月") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+                trailingIcon = {
+                    TextButton(onClick = {
+                        val p = InfoParser.parse(smartText)
+                        val today = LocalDate.now()
+                        val parts = ArrayList<String>()
+                        var msg: String
+
+                        val v = p.value
+                        val u = p.unit
+                        var date = p.productionDate
+
+                        // 只写了“保质期至某日”：用识别到的保质期，没有就用表单里当前填的
+                        val expiry = p.expiryDate
+                        if (date == null && expiry != null) {
+                            val vv = v ?: valueText.toIntOrNull()
+                            val uu = u ?: unit
+                            if (vv != null && vv > 0) {
+                                val derived = Dates.productionFromExpiry(expiry, vv, uu)
+                                if (derived.year >= 1990) {
+                                    date = derived
+                                    parts += "按保质期至 ${expiry.format(df)} 反推"
+                                } else {
+                                    parts += "反推结果不合理（保质期 $vv${uu.label}），请检查"
+                                }
+                            }
+                        }
+
+                        if (date != null) {
+                            if (date.isBefore(today)) {
+                                production = date
+                                parts += "生产日期 ${date.format(df)}"
+                            } else {
+                                parts += "${date.format(df)} 不早于今天，已忽略"
+                            }
+                        }
+                        if (v != null && u != null) {
+                            valueText = v.toString()
+                            unit = u
+                            parts += "保质期 $v${u.label}"
+                        }
+                        val nm = p.name
+                        if (nm != null && name.isBlank()) {
+                            name = nm
+                            parts += "商品名 $nm"
+                        }
+                        msg = if (parts.isEmpty()) {
+                            if (p.hasAnything) p.note
+                            else "没识别到，换个写法试试（生产日期2026-08-04 保质期12个月 / 保质期至2027-08-04 保质期18个月）"
+                        } else {
+                            parts.joinToString("，")
+                        }
+                        if (date != null && v != null && u != null) smartText = ""
+                        scope.launch { snackbar.showSnackbar(msg) }
+                    }) { Text("识别") }
+                }
+            )
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(

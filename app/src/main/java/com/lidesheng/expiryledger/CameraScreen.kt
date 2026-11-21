@@ -1,4 +1,4 @@
-package com.lidesheng.expiryledger
+﻿package com.lidesheng.expiryledger
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -120,7 +121,7 @@ private object BeepPlayer {
 fun CameraCaptureScreen(
     mode: CaptureMode,
     onBarcode: (String) -> Unit,
-    onText: (String) -> Unit,
+    onText: (String) -> String?,
     onClose: () -> Unit,
     onCandidates: (List<String>) -> Unit = {},
 ) {
@@ -158,6 +159,13 @@ fun CameraCaptureScreen(
     }
 
     val done = remember { AtomicBoolean(false) }
+    var scanMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(scanMessage) {
+        if (scanMessage != null) {
+            kotlinx.coroutines.delay(3500)
+            scanMessage = null
+        }
+    }
     val hint = when (mode) {
         CaptureMode.BARCODE -> "对准商品条码"
         CaptureMode.TEXT -> "对准包装上的生产日期"
@@ -234,8 +242,13 @@ fun CameraCaptureScreen(
                                         } else {
                                             val text = result.text
                                             if (text.isNotBlank() && done.compareAndSet(false, true)) {
-                                                BeepPlayer.play(context)
-                                                onText(text)
+                                                val reject = onText(text)
+                                                if (reject != null) {
+                                                    done.set(false)
+                                                    scanMessage = reject
+                                                } else {
+                                                    BeepPlayer.play(context)
+                                                }
                                             }
                                         }
                                     }
@@ -266,6 +279,19 @@ fun CameraCaptureScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     fontWeight = FontWeight.Medium
                 )
+            }
+
+            val msg = scanMessage
+            if (msg != null) {
+                Spacer(Modifier.height(10.dp))
+                Surface(color = Color(0xCCB00020), shape = MaterialTheme.shapes.medium) {
+                    Text(
+                        text = msg,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
 

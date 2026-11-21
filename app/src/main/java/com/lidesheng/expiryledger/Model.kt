@@ -74,8 +74,17 @@ object Dates {
         }
     }
 
-    fun remainingDays(expiry: LocalDate, today: LocalDate = LocalDate.now()): Long =
-        ChronoUnit.DAYS.between(today, expiry)
+    /** 已知到期日和保质期，反推生产日期 */
+    fun productionFromExpiry(expiry: LocalDate, value: Int, unit: LifeUnit): LocalDate {
+        val v = value.coerceAtLeast(1)
+        return when (unit) {
+            LifeUnit.DAY -> expiry.minusDays(v.toLong())
+            LifeUnit.MONTH -> expiry.minusMonths(v.toLong())
+            LifeUnit.YEAR -> expiry.minusYears(v.toLong())
+        }
+    }
+
+    fun remainingDays(expiry: LocalDate, today: LocalDate = LocalDate.now()): Long =        ChronoUnit.DAYS.between(today, expiry)
 
     fun formatRemaining(days: Long): String = when {
         days < 0 -> "已过期 ${-days} 天"

@@ -11,8 +11,8 @@ android {
         applicationId = "com.lidesheng.expiryledger"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "2.3"
+        versionCode = 23
+        versionName = "2.12"
     }
 
     buildTypes {

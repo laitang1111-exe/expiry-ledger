@@ -1,4 +1,4 @@
-package com.lidesheng.expiryledger
+﻿package com.lidesheng.expiryledger
 
 import android.content.ContentValues
 import android.content.Context
@@ -138,6 +138,26 @@ class LedgerRepository(context: Context) {
         return out
     }
 
+    /** 按 id 取一条批次（相机 OCR 改日期时要用它自己的保质期反推生产日期） */
+    fun findBatch(id: Long): Batch? {
+        helper.readableDatabase.rawQuery(
+            "SELECT id,barcode,name,productionDate,shelfLifeValue,shelfLifeUnit,expiryDate,deletedAt,createdAt " +
+                "FROM batch WHERE id = ?", arrayOf(id.toString())
+        ).use { c ->
+            if (!c.moveToFirst()) return null
+            return Batch(
+                id = c.getLong(0),
+                barcode = c.getString(1),
+                name = c.getString(2),
+                productionDate = LocalDate.parse(c.getString(3)),
+                shelfLifeValue = c.getInt(4),
+                unit = LifeUnit.from(c.getString(5)),
+                expiryDate = LocalDate.parse(c.getString(6)),
+                deletedAt = if (c.isNull(7)) null else c.getLong(7),
+                createdAt = c.getLong(8),
+            )
+        }
+    }
     fun findBarcode(barcode: String): BarcodeInfo? {
         helper.readableDatabase.rawQuery(
             "SELECT barcode,name,lastValue,lastUnit FROM barcode_info WHERE barcode = ?",

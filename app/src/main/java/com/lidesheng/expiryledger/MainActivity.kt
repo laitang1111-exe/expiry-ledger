@@ -1,4 +1,4 @@
-﻿package com.lidesheng.expiryledger
+package com.lidesheng.expiryledger
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -103,20 +103,33 @@ fun AppRoot() {
                 onBarcode = { },
                 onText = { raw ->
                     val ex = TextExtract.extract(raw)
+                    val parsed = InfoParser.parse(raw)
                     val today = java.time.LocalDate.now()
-                    val rawDate = ex.productionDate
-                    // 生产日期必须早于今天，否则丢弃
-                    val date = rawDate?.takeIf { it.isBefore(today) }
-                    if (date != null) {
-                        repo.updateProductionDate(s.batchId, date)
-                        homeNotice = "已把生产日期改为 $date"
-                        afterChange("拍日期改生产日期")
-                    } else if (rawDate != null) {
-                        homeNotice = "识别到 $rawDate，不早于今天（$today），已丢弃"
-                    } else {
-                        homeNotice = "没识别出日期，请手动改"
+                    var rawDate = ex.productionDate
+                    var how = "识别到"
+                    // 只拍到“保质期至某日”：用这条批次自己的保质期反推生产日期
+                    if (rawDate == null) {
+                        val expiry = parsed.expiryDate
+                        val batch = repo.findBatch(s.batchId)
+                        if (expiry != null && batch != null) {
+                            val derived = Dates.productionFromExpiry(expiry, batch.shelfLifeValue, batch.unit)
+                            if (derived.year >= 1990) {
+                                rawDate = derived
+                                how = "按保质期至 $expiry 反推"
+                            }
+                        }
                     }
-                    screen = if (s.returnStage == null) Screen.Home else Screen.StageList(s.returnStage)
+                    if (rawDate != null && rawDate.isBefore(today)) {
+                        repo.updateProductionDate(s.batchId, rawDate)
+                        homeNotice = "$how $rawDate"
+                        afterChange("拍日期改生产日期")
+                        screen = if (s.returnStage == null) Screen.Home else Screen.StageList(s.returnStage)
+                        null
+                    } else if (rawDate != null) {
+                        "识别到 $rawDate，不早于今天（$today），请移动摄像头换个日期"
+                    } else {
+                        "没识别出日期，请移动摄像头对准生产日期或保质期至"
+                    }
                 },
                 onClose = {
                     screen = if (s.returnStage == null) Screen.Home else Screen.StageList(s.returnStage)
